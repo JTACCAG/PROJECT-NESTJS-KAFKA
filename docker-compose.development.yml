@@ -1,0 +1,101 @@
+version: '3.8'
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: ${ENVIRON}_zookeeper
+    env_file:
+      - .env
+    ports:
+      - 2181:2181
+    # volumes:
+    #   - ./.data/zookeeper_data:/bitnami
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: ${ENVIRON}_kafka
+    hostname: kafka
+    env_file:
+      - .env
+    ports:
+      - 9092:9092
+    # volumes:
+    #   - ./.data/kafka_data:/bitnami
+    depends_on:
+      - zookeeper
+  
+  kafdrop:
+    image: obsidiandynamics/kafdrop:latest
+    container_name: ${ENVIRON}_kafdrop
+    depends_on:
+      - kafka
+    ports:
+      - 19000:9000
+    env_file:
+      - .env
+
+  postgres:
+    image: 'postgres'
+    container_name: ${ENVIRON}_postgres
+    ports:
+      - 5432:5432
+    volumes:
+      - './.volumes/postgres_data:/var/lib/postgresql/data'
+    env_file:
+      - .env
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: ${ENVIRON}_pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=jtaccag@baumark.com
+      - PGADMIN_DEFAULT_PASSWORD=${POSTGRES_PASSWORD}
+    user: 5050:5050
+    depends_on:
+      - 'postgres'
+    ports:
+      - 5050:80
+    links:
+      - 'postgres:postgres'
+    volumes:
+      - ./.volumes/pgadmin:/var/lib/pgadmin
+  
+  anti_fraud:
+    build:
+      context: .
+      dockerfile: ./services/anti-fraud/Dockerfile
+      target: '${ENVIRON}'
+    container_name: ${ENVIRON}_anti-fraud
+    # user: $CURRENT_UID:$CURRENT_GID
+    env_file: .env
+    depends_on:
+      - 'kafka'
+    volumes:
+      - ./services/anti-fraud:/usr/src/app
+      - ./services/anti-fraud/node_modules:/usr/src/app/node_modules
+
+  api:
+    build:
+      context: .
+      dockerfile: ./services/api/Dockerfile
+      target: '${ENVIRON}'
+    container_name: ${ENVIRON}_api
+    # user: $CURRENT_UID:$CURRENT_GID
+    env_file: .env
+    ports:
+      - 3000:3000
+    depends_on:
+      - 'postgres'
+      - 'anti_fraud'
+    volumes:
+      - ./services/api:/usr/src/app
+      - ./services/api/node_modules:/usr/src/app/node_modules
+
+networks:
+  default:
+    external: true
+    name: yapeapp
+    driver: bridge
+
+volumes:
+  cache:
+    driver: local
